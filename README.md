@@ -19,8 +19,8 @@ The extension registers **17 sources** (one per language: ja, en, zh, nl, fr, de
 
 - Popular / Latest / Search with full filter support (genres, tags, min rating, page ranges, favorites/watched lists)
 - Tag namespaces parsed into Mihon's tag list; galleries become single-chapter entries
-- **ExHentai support** — enter your `ipb_member_id`, `ipb_pass_hash` and `igneous` cookies in the extension settings (or log in via WebView once); it automatically switches to exhentai.org
-- "Force e-hentai" toggle to stay on e-hentai.org, "Original Image" toggle for full-resolution images
+- **ExHentai support (automatic)** — open the source in WebView, log in on e-hentai.org, then just browse. The extension picks up `ipb_member_id` / `ipb_pass_hash` from the WebView by itself, then completes the ExHentai sign-in automatically by walking the same SSO bounce a browser uses (exhentai.org → `forums.e-hentai.org/remoteapi.php` → `?poni=`) and capturing the `igneous` cookie. No manual cookie entry needed; the settings fields remain as an override.
+- "Force e-hentai" toggle (off by default) to stay on e-hentai.org, "Original Image" toggle for full-resolution images
 - Deep links for `e-hentai.org/g/…` and `exhentai.org/g/…` URLs
 - `id:<gallery id>` search prefix and pasting a gallery URL directly into search
 

@@ -33,6 +33,7 @@ import okhttp3.Response
 import org.jsoup.nodes.Element
 import rx.Observable
 import java.net.URLEncoder
+import java.util.concurrent.atomic.AtomicLong
 
 @Source
 abstract class EHentai :
@@ -63,15 +64,54 @@ abstract class EHentai :
     private val preferences: SharedPreferences by getPreferencesLazy()
 
     private val webViewCookieManager: CookieManager by lazy { CookieManager.getInstance() }
-    private val memberId: String by lazy { getMemberIdPref() }
-    private val passHash: String by lazy { getPassHashPref() }
-    private val igneous: String by lazy { getIgneousPref() }
-    private val forceEh: Boolean by lazy { getForceEhPref() }
+
+    /**
+     * Domain whose cookie jar holds the login cookies. The login form on
+     * e-hentai.org posts to forums.e-hentai.org, and the resulting
+     * ipb_member_id / ipb_pass_hash cookies are set on the .e-hentai.org
+     * domain, so they are visible from any of these URLs.
+     */
+    private val ehCookieUrls = arrayOf(
+        "https://e-hentai.org",
+        "https://forums.e-hentai.org",
+        "https://exhentai.org",
+    )
+
+    /** exhentai.org is the only domain where the igneous cookie ever exists */
+    private val exCookieUrl = "https://exhentai.org"
+
+    /**
+     * "mystery" is the sad-panda rejection value exhentai hands out for
+     * invalid sessions; it must never be treated as a real login.
+     */
+    private fun String?.asIgneous(): String? = this
+        ?.takeIf { it.isNotBlank() && it != "mystery" }
+
+    private fun getMemberId(): String =
+        getCookieFromWebviews("ipb_member_id", *ehCookieUrls)
+            ?: preferences.getString(MEMBER_ID_PREF_KEY, MEMBER_ID_PREF_DEFAULT_VALUE).orEmpty()
+
+    private fun getPassHash(): String =
+        getCookieFromWebviews("ipb_pass_hash", *ehCookieUrls)
+            ?: preferences.getString(PASS_HASH_PREF_KEY, PASS_HASH_PREF_DEFAULT_VALUE).orEmpty()
+
+    /**
+     * Current igneous cookie. Falls back to the stored preference, which is
+     * both the manual override field and the cache for the value fetched by
+     * the automatic ExHentai sign-in.
+     */
+    private fun getIgneous(): String =
+        (getCookieFromWebviews("igneous", exCookieUrl) ?: preferences.getString(IGNEOUS_PREF_KEY, IGNEOUS_PREF_DEFAULT_VALUE))
+            .asIgneous()
+            ?: ""
+
+    /** true when the user has an e-hentai account session to work with */
+    private fun hasLoginCookies(): Boolean = getMemberId().isNotEmpty() && getPassHash().isNotEmpty()
 
     override val baseUrl: String
         get() = when {
             System.getenv("CI") == "true" -> "https://e-hentai.org"
-            !forceEh && memberId.isNotEmpty() && passHash.isNotEmpty() -> "https://exhentai.org"
+            !getForceEhPref() && hasLoginCookies() -> "https://exhentai.org"
             else -> "https://e-hentai.org"
         }
 
@@ -410,7 +450,16 @@ abstract class EHentai :
         return "$imgUrl#$bakUrl"
     }
 
-    private val cookiesHeader by lazy {
+    /**
+     * Builds the Cookie header with values that are read live from the
+     * WebView cookie store / preferences, so a login performed through the
+     * WebView takes effect immediately instead of after an app restart.
+     *
+     * Only non-empty values are included: sending empty ipb/igneous cookies
+     * makes exhentai.org skip the sign-in redirect and reply with the sad
+     * panda page straight away.
+     */
+    private fun buildCookiesHeader(igneousOverride: String? = null): String {
         val cookies = mutableMapOf<String, String>()
 
         // Setup settings
@@ -429,22 +478,149 @@ abstract class EHentai :
         // Bypass "Offensive For Everyone" content warning
         cookies["nw"] = "1"
 
-        cookies["ipb_member_id"] = memberId
+        getMemberId().takeIf { it.isNotEmpty() }?.let { cookies["ipb_member_id"] = it }
 
-        cookies["ipb_pass_hash"] = passHash
+        getPassHash().takeIf { it.isNotEmpty() }?.let { cookies["ipb_pass_hash"] = it }
 
-        cookies["igneous"] = igneous
+        val igneous = igneousOverride ?: getIgneous()
+        if (igneous.isNotEmpty()) {
+            cookies["igneous"] = igneous
+        }
 
-        buildCookies(cookies)
+        return buildCookies(cookies)
     }
 
     // Headers
-    override fun headersBuilder() = super.headersBuilder().add("Cookie", cookiesHeader)
+    override fun headersBuilder() = super.headersBuilder().add("Cookie", buildCookiesHeader())
 
     private fun buildSettings(settings: List<String?>) = settings.filterNotNull().joinToString(separator = "-")
 
     private fun buildCookies(cookies: Map<String, String>) = cookies.entries.joinToString(separator = "; ", postfix = ";") {
         "${URLEncoder.encode(it.key, "UTF-8")}=${URLEncoder.encode(it.value, "UTF-8")}"
+    }
+
+    /**
+     * Client used exclusively for the ExHentai sign-in handshake. Redirects
+     * are followed manually so the right cookies can be attached to each
+     * hop of the chain (the main client has no cookie jar at all).
+     */
+    private val ssoClient by lazy {
+        network.client.newBuilder()
+            .cookieJar(CookieJar.NO_COOKIES)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+    }
+
+    /** epoch millis of the last sign-in attempt, to avoid hammering exhentai */
+    private val lastSignInAttempt = AtomicLong(0)
+
+    private val signInLock = Any()
+
+    /**
+     * Completes the ExHentai login over the same SSO bounce a browser uses:
+     *
+     *   exhentai.org -> forums.e-hentai.org/remoteapi.php?ex=<token>
+     *               (validates ipb_member_id / ipb_pass_hash)
+     *             -> exhentai.org/?poni=<token> -> Set-Cookie: igneous=<real>
+     *
+     * Returns the igneous value on success, or null when the account has no
+     * ExHentai access / is not logged in to e-hentai.
+     */
+    private fun signInToExHentai(memberId: String, passHash: String): String? {
+        val ipbCookies = "ipb_member_id=$memberId; ipb_pass_hash=$passHash"
+        val baseHeaders = headers.newBuilder().removeAll("Cookie").build()
+
+        fun call(url: String, cookie: String? = null): Response {
+            val request = Request.Builder()
+                .url(url)
+                .headers(baseHeaders)
+                .apply { cookie?.let { header("Cookie", it) } }
+                .build()
+            return ssoClient.newCall(request).execute()
+        }
+
+        fun igneousFrom(response: Response): String? =
+            response.headers.values("Set-Cookie")
+                .firstNotNullOfOrNull { header ->
+                    header.split(";").firstOrNull { it.trim().startsWith("igneous=") }
+                }
+                ?.substringAfter("igneous=")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && it != "mystery" }
+
+        // 1. hit exhentai.org with no cookies to obtain the SSO bounce URL
+        call("https://exhentai.org/").use { first ->
+            val bounce = first.headers["Location"]
+                ?.takeIf { first.code in 300..399 }
+                ?.takeIf { it.contains("forums.e-hentai.org/remoteapi.php") }
+                ?: return null
+
+            // 2. let the forums validate the e-hentai login cookies
+            call(bounce, ipbCookies).use { forums ->
+                val back = forums.headers["Location"]
+                    ?.takeIf { forums.code in 300..399 }
+                    ?: return null
+
+                // not logged in, or the account has no ExHentai access
+                if (Uri.parse(back).getQueryParameter("poni") == "no") return null
+
+                // 3. land back on exhentai.org, which grants the igneous
+                // cookie (possibly over one extra redirect)
+                var url = back
+                repeat(4) {
+                    call(url, ipbCookies).use { landing ->
+                        igneousFrom(landing)?.let { return it }
+
+                        url = landing.headers["Location"]
+                            ?.takeIf { landing.code in 300..399 }
+                            ?: return null
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Makes sure an igneous value is available when browsing exhentai.org.
+     * Runs the SSO sign-in at most once every [SIGN_IN_COOLDOWN_MS]; the
+     * obtained value is persisted and also shared with the WebView cookie
+     * store so "Open in WebView" stays logged in as well.
+     */
+    private fun ensureExHentaiSignIn(force: Boolean = false): String {
+        val memberId = getMemberId()
+        val passHash = getPassHash()
+        if (memberId.isEmpty() || passHash.isEmpty()) return ""
+
+        getIgneous().takeIf { it.isNotEmpty() }?.let { return it }
+
+        if (!force) {
+            val now = System.currentTimeMillis()
+            if (now - lastSignInAttempt.get() < SIGN_IN_COOLDOWN_MS) return ""
+        }
+
+        synchronized(signInLock) {
+            // another thread may have finished the sign-in while we waited
+            getIgneous().takeIf { it.isNotEmpty() }?.let { return it }
+            lastSignInAttempt.set(System.currentTimeMillis())
+
+            val igneous = runCatching { signInToExHentai(memberId, passHash) }.getOrNull()
+            if (igneous != null) {
+                preferences.edit().putString(IGNEOUS_PREF_KEY, igneous).apply()
+
+                // share the ExHentai session with the WebView cookie store
+                runCatching {
+                    webViewCookieManager.setAcceptCookie(true)
+                    webViewCookieManager.setCookie(exCookieUrl, "igneous=$igneous")
+                    webViewCookieManager.setCookie(exCookieUrl, "ipb_member_id=$memberId")
+                    webViewCookieManager.setCookie(exCookieUrl, "ipb_pass_hash=$passHash")
+                    CookieManager.getInstance().flush()
+                }
+                return igneous
+            }
+        }
+        return ""
     }
 
     @Suppress("SameParameterValue")
@@ -475,15 +651,111 @@ abstract class EHentai :
             }
         }
         .addInterceptor { chain ->
-            val newReq = chain
-                .request()
-                .newBuilder()
+            val request = chain.request()
+            val host = request.url.host
+
+            // No session cookies should leak to unrelated image hosts
+            val cookieHeader = if (host.endsWith("e-hentai.org") || host.endsWith("exhentai.org")) {
+                // completing the ExHentai sign-in is only relevant on exhentai
+                val igneous = if (host == "exhentai.org") {
+                    ensureExHentaiSignIn()
+                } else {
+                    getIgneous()
+                }
+                buildCookiesHeader(igneous.takeIf { it.isNotEmpty() })
+            } else {
+                null
+            }
+
+            val newReq = request.newBuilder()
                 .removeHeader("Cookie")
-                .addHeader("Cookie", cookiesHeader)
+                .apply {
+                    cookieHeader?.let { addHeader("Cookie", it) }
+                }
                 .build()
 
-            chain.proceed(newReq)
+            val response = chain.proceed(newReq)
+
+            harvestIgneous(response)
+
+            if (host == "exhentai.org" && isSadPanda(response)) {
+                response.close()
+
+                val sentIgneous = cookieHeader?.contains("igneous=") == true
+                if (sentIgneous) {
+                    // the stored igneous went stale while the e-hentai login
+                    // may still be fine: drop it, sign in again, retry once
+                    clearStoredIgneous()
+                    val freshIgneous = ensureExHentaiSignIn(force = true)
+
+                    if (freshIgneous.isNotEmpty()) {
+                        val retryReq = request.newBuilder()
+                            .removeHeader("Cookie")
+                            .addHeader("Cookie", buildCookiesHeader(freshIgneous))
+                            .build()
+
+                        val retryResponse = chain.proceed(retryReq)
+                        harvestIgneous(retryResponse)
+
+                        if (!isSadPanda(retryResponse)) {
+                            return@addInterceptor retryResponse
+                        }
+                        retryResponse.close()
+                    }
+                }
+
+                throw Exception(SAD_PANDA_MESSAGE)
+            }
+
+            response
         }.build()
+
+    /** exhentai.org's rejection marker for invalid sessions */
+    private fun isSadPanda(response: Response): Boolean =
+        response.headers.values("Set-Cookie").any { it.trim().startsWith("igneous=mystery") }
+
+    private fun clearStoredIgneous() {
+        preferences.edit().putString(IGNEOUS_PREF_KEY, IGNEOUS_PREF_DEFAULT_VALUE).apply()
+        runCatching {
+            webViewCookieManager.setCookie(exCookieUrl, "igneous=; Max-Age=0; Path=/")
+        }
+    }
+
+    /**
+     * Keeps the stored igneous fresh: exhentai rotates the value over time
+     * and hands out the current one in Set-Cookie on every response.
+     */
+    private fun harvestIgneous(response: Response) {
+        if (!response.request.url.host.endsWith("exhentai.org")) return
+
+        response.headers.values("Set-Cookie")
+            .firstOrNull { it.trim().startsWith("igneous=") }
+            ?.substringAfter("igneous=")
+            ?.substringBefore(";")
+            ?.trim()
+            ?.asIgneous()
+            ?.let { fresh ->
+                if (fresh != preferences.getString(IGNEOUS_PREF_KEY, IGNEOUS_PREF_DEFAULT_VALUE)) {
+                    preferences.edit().putString(IGNEOUS_PREF_KEY, fresh).apply()
+                    runCatching {
+                        webViewCookieManager.setCookie(exCookieUrl, "igneous=$fresh")
+                    }
+                }
+            }
+    }
+
+    /**
+     * exhentai.org answers 200 with an (almost) empty body and
+     * `Set-Cookie: igneous=mystery` when the session is rejected — the
+     * infamous sad panda. This surfaces a readable error instead of an
+     * empty "no results" list.
+     */
+    private val SAD_PANDA_MESSAGE =
+        "ExHentai rejected this login (sad panda)." + "\n\n" +
+            "1. Open this source in WebView and make sure you are logged in on e-hentai.org" + "\n" +
+            "2. Come back and browse again — the ExHentai sign-in completes automatically" + "\n" +
+            "3. If it still fails, your account may not have ExHentai access;" + "\n" +
+            "   enable 'Force e-hentai' in the extension settings to keep using e-hentai.org"
 
     // Filters
     override fun getFilterList() = FilterList(
@@ -654,23 +926,26 @@ abstract class EHentai :
 
         private const val MEMBER_ID_PREF_KEY = "MEMBER_ID"
         private const val MEMBER_ID_PREF_TITLE = "ipb_member_id"
-        private const val MEMBER_ID_PREF_SUMMARY = "ipb_member_id value"
+        private const val MEMBER_ID_PREF_SUMMARY = "Leave empty to pick the login up from the WebView automatically.\nOnly needed as a manual override."
         private const val MEMBER_ID_PREF_DEFAULT_VALUE = ""
 
         private const val PASS_HASH_PREF_KEY = "PASS_HASH"
         private const val PASS_HASH_PREF_TITLE = "ipb_pass_hash"
-        private const val PASS_HASH_PREF_SUMMARY = "ipb_pass_hash value"
+        private const val PASS_HASH_PREF_SUMMARY = "Leave empty to pick the login up from the WebView automatically.\nOnly needed as a manual override."
         private const val PASS_HASH_PREF_DEFAULT_VALUE = ""
 
         private const val IGNEOUS_PREF_KEY = "IGNEOUS"
         private const val IGNEOUS_PREF_TITLE = "igneous"
-        private const val IGNEOUS_PREF_SUMMARY = "igneous value override"
+        private const val IGNEOUS_PREF_SUMMARY = "ExHentai session cookie. Filled in automatically after logging in on e-hentai.org through the WebView; a manual value is only needed if that fails."
         private const val IGNEOUS_PREF_DEFAULT_VALUE = ""
 
         private const val FORCE_EH = "FORCE_EH"
         private const val FORCE_EH_TITLE = "Force e-hentai"
-        private const val FORCE_EH_SUMMARY = "Force e-hentai to avoid content on exhentai"
-        private const val FORCE_EH_DEFAULT_VALUE = true
+        private const val FORCE_EH_SUMMARY = "Browse e-hentai.org only. Uncheck to use exhentai.org when logged in (the ExHentai sign-in completes automatically)"
+        private const val FORCE_EH_DEFAULT_VALUE = false
+
+        /** minimum time between automatic ExHentai sign-in attempts */
+        private const val SIGN_IN_COOLDOWN_MS = 60_000L
     }
 
     // Preferences
@@ -733,33 +1008,26 @@ abstract class EHentai :
 
     private fun getOriginalImagePref(): Boolean = preferences.getBoolean("${ORIGINAL_IMAGE_PREF_KEY}_$lang", ORIGINAL_IMAGE_PREF_DEFAULT_VALUE)
 
-    private fun getCookieValue(cookieTitle: String, defaultValue: String, prefKey: String): String {
-        val cookies = webViewCookieManager.getCookie("https://forums.e-hentai.org")
-        var value: String? = null
+    /**
+     * Reads a cookie from the WebView cookie store, trying each URL in
+     * order and returning the first non-empty value found. Returns null when
+     * the cookie is nowhere to be found, so callers can fall back to the
+     * manually-entered preference.
+     */
+    private fun getCookieFromWebviews(name: String, vararg urls: String): String? {
+        for (url in urls) {
+            val jar = runCatching { webViewCookieManager.getCookie(url) }.getOrNull() ?: continue
 
-        if (cookies != null) {
-            val cookieArray = cookies.split("; ")
-            for (cookie in cookieArray) {
-                if (cookie.startsWith("$cookieTitle=")) {
-                    value = cookie.split("=")[1]
-
-                    break
+            jar.split(";").forEach { raw ->
+                val cookie = raw.trim()
+                if (cookie.startsWith("$name=")) {
+                    val value = cookie.substringAfter("=", "").trim()
+                    if (value.isNotEmpty()) return value
                 }
             }
         }
-
-        if (value == null) {
-            value = preferences.getString(prefKey, defaultValue) ?: defaultValue
-        }
-
-        return value
+        return null
     }
-
-    private fun getPassHashPref(): String = getCookieValue(PASS_HASH_PREF_TITLE, PASS_HASH_PREF_DEFAULT_VALUE, PASS_HASH_PREF_KEY)
-
-    private fun getMemberIdPref(): String = getCookieValue(MEMBER_ID_PREF_TITLE, MEMBER_ID_PREF_DEFAULT_VALUE, MEMBER_ID_PREF_KEY)
-
-    private fun getIgneousPref(): String = getCookieValue(IGNEOUS_PREF_TITLE, IGNEOUS_PREF_DEFAULT_VALUE, IGNEOUS_PREF_KEY)
 
     private fun getForceEhPref(): Boolean = preferences.getBoolean(FORCE_EH, FORCE_EH_DEFAULT_VALUE)
 }
