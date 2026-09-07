@@ -707,8 +707,7 @@ abstract class EHentai :
         }.build()
 
     /** exhentai.org's rejection marker for invalid sessions */
-    private fun isSadPanda(response: Response): Boolean =
-        response.headers.values("Set-Cookie").any { it.trim().startsWith("igneous=mystery") }
+    private fun isSadPanda(response: Response): Boolean = response.headers.values("Set-Cookie").any { it.trim().startsWith("igneous=mystery") }
 
     private fun clearStoredIgneous() {
         preferences.edit().putString(IGNEOUS_PREF_KEY, IGNEOUS_PREF_DEFAULT_VALUE).apply()
