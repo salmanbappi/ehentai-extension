@@ -87,23 +87,20 @@ abstract class EHentai :
     private fun String?.asIgneous(): String? = this
         ?.takeIf { it.isNotBlank() && it != "mystery" }
 
-    private fun getMemberId(): String =
-        getCookieFromWebviews("ipb_member_id", *ehCookieUrls)
-            ?: preferences.getString(MEMBER_ID_PREF_KEY, MEMBER_ID_PREF_DEFAULT_VALUE).orEmpty()
+    private fun getMemberId(): String = getCookieFromWebviews("ipb_member_id", *ehCookieUrls)
+        ?: preferences.getString(MEMBER_ID_PREF_KEY, MEMBER_ID_PREF_DEFAULT_VALUE).orEmpty()
 
-    private fun getPassHash(): String =
-        getCookieFromWebviews("ipb_pass_hash", *ehCookieUrls)
-            ?: preferences.getString(PASS_HASH_PREF_KEY, PASS_HASH_PREF_DEFAULT_VALUE).orEmpty()
+    private fun getPassHash(): String = getCookieFromWebviews("ipb_pass_hash", *ehCookieUrls)
+        ?: preferences.getString(PASS_HASH_PREF_KEY, PASS_HASH_PREF_DEFAULT_VALUE).orEmpty()
 
     /**
      * Current igneous cookie. Falls back to the stored preference, which is
      * both the manual override field and the cache for the value fetched by
      * the automatic ExHentai sign-in.
      */
-    private fun getIgneous(): String =
-        (getCookieFromWebviews("igneous", exCookieUrl) ?: preferences.getString(IGNEOUS_PREF_KEY, IGNEOUS_PREF_DEFAULT_VALUE))
-            .asIgneous()
-            ?: ""
+    private fun getIgneous(): String = (getCookieFromWebviews("igneous", exCookieUrl) ?: preferences.getString(IGNEOUS_PREF_KEY, IGNEOUS_PREF_DEFAULT_VALUE))
+        .asIgneous()
+        ?: ""
 
     /** true when the user has an e-hentai account session to work with */
     private fun hasLoginCookies(): Boolean = getMemberId().isNotEmpty() && getPassHash().isNotEmpty()
@@ -529,7 +526,7 @@ abstract class EHentai :
      */
     private fun signInToExHentai(memberId: String, passHash: String): String? {
         val ipbCookies = "ipb_member_id=$memberId; ipb_pass_hash=$passHash"
-        val baseHeaders = headers.newBuilder().removeAll("Cookie").build()
+        val baseHeaders = headers.newBuilder().apply { removeAll("Cookie") }.build()
 
         fun call(url: String, cookie: String? = null): Response {
             val request = Request.Builder()
@@ -540,14 +537,13 @@ abstract class EHentai :
             return ssoClient.newCall(request).execute()
         }
 
-        fun igneousFrom(response: Response): String? =
-            response.headers.values("Set-Cookie")
-                .firstNotNullOfOrNull { header ->
-                    header.split(";").firstOrNull { it.trim().startsWith("igneous=") }
-                }
-                ?.substringAfter("igneous=")
-                ?.trim()
-                ?.takeIf { it.isNotBlank() && it != "mystery" }
+        fun igneousFrom(response: Response): String? = response.headers.values("Set-Cookie")
+            .firstNotNullOfOrNull { header ->
+                header.split(";").firstOrNull { it.trim().startsWith("igneous=") }
+            }
+            ?.substringAfter("igneous=")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && it != "mystery" }
 
         // 1. hit exhentai.org with no cookies to obtain the SSO bounce URL
         call("https://exhentai.org/").use { first ->
