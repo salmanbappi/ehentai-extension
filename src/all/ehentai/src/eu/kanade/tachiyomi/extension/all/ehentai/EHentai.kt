@@ -704,7 +704,7 @@ abstract class EHentai :
                     }
                 }
 
-                throw Exception(SAD_PANDA_MESSAGE)
+                throw Exception(sadPandaMessage)
             }
 
             response
@@ -750,7 +750,7 @@ abstract class EHentai :
      * infamous sad panda. This surfaces a readable error instead of an
      * empty "no results" list.
      */
-    private val SAD_PANDA_MESSAGE =
+    private val sadPandaMessage =
         "ExHentai rejected this login (sad panda)." + "\n\n" +
             "1. Open this source in WebView and make sure you are logged in on e-hentai.org" + "\n" +
             "2. Come back and browse again — the ExHentai sign-in completes automatically" + "\n" +
