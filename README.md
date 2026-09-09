@@ -1,4 +1,4 @@
-# E-Hentai Extension (Mihon/Tachiyomi)
+# ExHentai / E-Hentai Extension (Mihon/Tachiyomi)
 
 Standalone [Mihon](https://mihon.app) / Tachiyomi extension for **e-hentai.org / exhentai.org**, built on the modern [keiyoushi](https://github.com/keiyoushi) Gradle build system. Extracted from [yuzono/cursed-manga-extensions](https://github.com/yuzono/cursed-manga-extensions) (Apache-2.0) with only the e-hentai extension kept — everything needed to build is included in this repo.
 
@@ -13,7 +13,7 @@ Standalone [Mihon](https://mihon.app) / Tachiyomi extension for **e-hentai.org /
 | `.github/` | CI: build on push, publish into your extension repo |
 | `common/` | Shared manifest template + proguard rules |
 
-The extension registers **17 sources** (one per language: ja, en, zh, nl, fr, de, hu, it, ko, pl, pt-BR, ru, es, th, vi, none, other) under the name "E-Hentai", exactly like upstream.
+The extension registers **17 sources** (one per language: ja, en, zh, nl, fr, de, hu, it, ko, pl, pt-BR, ru, es, th, vi, none, other) under the name "ExHentai / E-Hentai".
 
 ## Extension features
 
@@ -48,7 +48,7 @@ The extension registers **17 sources** (one per language: ja, en, zh, nl, fr, de
    - build + sign `tachiyomi-all.ehentai-v1.4.<code>.apk`,
    - publish the APK, icon and index entry into **`salmanbappi/salmanbappi-manga-extension`** (`main` branch) using the same legacy index format as your other extensions.
 
-Your existing repo URL keeps working — E-Hentai simply appears next to your other extensions:
+Your existing repo URL keeps working — ExHentai / E-Hentai simply appears next to your other extensions:
 
 ```
 https://salmanbappi.github.io/salmanbappi-manga-extension/index.min.json
