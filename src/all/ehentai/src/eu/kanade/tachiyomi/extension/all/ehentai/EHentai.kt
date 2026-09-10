@@ -1035,7 +1035,7 @@ abstract class EHentai :
     }
 
     private fun getDefaultLanguageIndex(): Int = preferences.getString(DEFAULT_LANGUAGE_PREF_KEY, DEFAULT_LANGUAGE_DEFAULT_VALUE)?.toIntOrNull() ?: 0
- 
+
     private fun getDefaultLanguage(): String? = LANGUAGES.getOrNull(getDefaultLanguageIndex())?.second
 
     private fun getOriginalImagePref(): Boolean = preferences.getBoolean(ORIGINAL_IMAGE_PREF_KEY, ORIGINAL_IMAGE_PREF_DEFAULT_VALUE)
