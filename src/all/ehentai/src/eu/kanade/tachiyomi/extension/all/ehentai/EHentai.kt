@@ -6,6 +6,7 @@ import android.net.Uri
 import android.webkit.CookieManager
 import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
+import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
@@ -180,26 +181,43 @@ abstract class EHentai :
         if (it.text() == ">") it.attr("href") else null
     }
 
-    /** e-hentai language tag selected in the Language filter, or null for "All" */
-    private fun selectedLanguage(filters: FilterList): String? = (filters.find { it is LanguageFilter } as? LanguageFilter)
-        ?.state
-        ?.let { LANGUAGES.getOrNull(it)?.second }
+    /** e-hentai language tag selected in the Language filter or settings, or null for "All" */
+    private fun selectedLanguage(filters: FilterList): String? {
+        val filter = filters.find { it is LanguageFilter } as? LanguageFilter
+        return if (filter != null) {
+            LANGUAGES.getOrNull(filter.state)?.second
+        } else {
+            getDefaultLanguage()
+        }
+    }
 
     /** languages that can be searched through the `language:` tag */
     private fun isNaturalLanguage(tag: String): Boolean = tag != "n/a" && tag != "other"
 
     override fun popularMangaRequest(page: Int): Request {
-        currentLanguage = null
-        return exGet("$baseUrl/?f_search=&f_srdd=5&f_sr=on", page)
+        val language = getDefaultLanguage()
+        currentLanguage = language
+        val searchQuery = if (language != null && isNaturalLanguage(language)) {
+            "language:\"$language\"$"
+        } else {
+            ""
+        }
+        val encodedSearch = URLEncoder.encode(searchQuery, "UTF-8")
+        return exGet("$baseUrl/?f_search=$encodedSearch&f_srdd=5&f_sr=on", page)
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val language = selectedLanguage(filters)
         currentLanguage = language
+        val languageTag = if (language != null && isNaturalLanguage(language)) {
+            "language:\"$language\"$"
+        } else {
+            null
+        }
         var modifiedQuery = when {
-            language == null || !isNaturalLanguage(language) -> query
-            query.isBlank() -> "language:$language"
-            else -> "$query,language:$language"
+            languageTag == null -> query
+            query.isBlank() -> languageTag
+            else -> "$query $languageTag"
         }
         filters.filterIsInstance<TextFilter>().forEach { filter ->
             if (filter.state.isNotEmpty()) {
@@ -242,8 +260,15 @@ abstract class EHentai :
     }
 
     override fun latestUpdatesRequest(page: Int): Request {
-        currentLanguage = null
-        return exGet(baseUrl, page)
+        val language = getDefaultLanguage()
+        currentLanguage = language
+        val url = if (language != null && isNaturalLanguage(language)) {
+            val encodedSearch = URLEncoder.encode("language:\"$language\"$", "UTF-8")
+            "$baseUrl$QUERY_PREFIX&f_search=$encodedSearch"
+        } else {
+            baseUrl
+        }
+        return exGet(url, page)
     }
 
     override fun popularMangaParse(response: Response) = genericMangaParse(response)
@@ -737,7 +762,10 @@ abstract class EHentai :
 
     // Filters
     override fun getFilterList() = FilterList(
-        LanguageFilter(),
+        Filter.Header("Language"),
+        LanguageFilter(getDefaultLanguageIndex()),
+        Filter.Separator(),
+        Filter.Header("Filters"),
         Favorites(),
         Watched(),
         GenreGroup(),
@@ -863,7 +891,8 @@ abstract class EHentai :
             ),
         )
 
-    class LanguageFilter : Select<String>("Language", LANGUAGES.map { it.first }.toTypedArray())
+    class LanguageFilter(default: Int = 0) :
+        Select<String>("Language", LANGUAGES.map { it.first }.toTypedArray(), default)
 
     // map languages to their internal ids
     private val languageMappings = listOf(
@@ -914,6 +943,11 @@ abstract class EHentai :
         )
 
         // Preferences vals
+        private const val DEFAULT_LANGUAGE_PREF_KEY = "DEFAULT_LANGUAGE"
+        private const val DEFAULT_LANGUAGE_PREF_TITLE = "Default Language"
+        private const val DEFAULT_LANGUAGE_PREF_SUMMARY = "Default language for popular and latest browsing"
+        private const val DEFAULT_LANGUAGE_DEFAULT_VALUE = "0"
+
         private const val ORIGINAL_IMAGE_PREF_KEY = "ORIGINAL_IMAGE"
         private const val ORIGINAL_IMAGE_PREF_TITLE = "Original Image"
         private const val ORIGINAL_IMAGE_PREF_SUMMARY = "If checked, if your account has permission, it will use the original image and the image enhancement process will be slower"
@@ -953,6 +987,15 @@ abstract class EHentai :
             setDefaultValue(FORCE_EH_DEFAULT_VALUE)
         }
 
+        val defaultLanguagePref = ListPreference(screen.context).apply {
+            key = DEFAULT_LANGUAGE_PREF_KEY
+            title = DEFAULT_LANGUAGE_PREF_TITLE
+            summary = "%s"
+            entries = LANGUAGES.map { it.first }.toTypedArray()
+            entryValues = LANGUAGES.indices.map { it.toString() }.toTypedArray()
+            setDefaultValue(DEFAULT_LANGUAGE_DEFAULT_VALUE)
+        }
+
         val originalImagePref = CheckBoxPreference(screen.context).apply {
             key = ORIGINAL_IMAGE_PREF_KEY
             title = ORIGINAL_IMAGE_PREF_TITLE
@@ -985,11 +1028,18 @@ abstract class EHentai :
         }
 
         screen.addPreference(forceEhPref)
+        screen.addPreference(defaultLanguagePref)
         screen.addPreference(memberIdPref)
         screen.addPreference(passHashPref)
         screen.addPreference(igneousPref)
         screen.addPreference(originalImagePref)
     }
+
+    private fun getDefaultLanguageIndex(): Int =
+        preferences.getString(DEFAULT_LANGUAGE_PREF_KEY, DEFAULT_LANGUAGE_DEFAULT_VALUE)?.toIntOrNull() ?: 0
+
+    private fun getDefaultLanguage(): String? =
+        LANGUAGES.getOrNull(getDefaultLanguageIndex())?.second
 
     private fun getOriginalImagePref(): Boolean = preferences.getBoolean(ORIGINAL_IMAGE_PREF_KEY, ORIGINAL_IMAGE_PREF_DEFAULT_VALUE)
 
