@@ -181,10 +181,9 @@ abstract class EHentai :
     }
 
     /** e-hentai language tag selected in the Language filter, or null for "All" */
-    private fun selectedLanguage(filters: FilterList): String? =
-        (filters.find { it is LanguageFilter } as? LanguageFilter)
-            ?.state
-            ?.let { LANGUAGES.getOrNull(it)?.second }
+    private fun selectedLanguage(filters: FilterList): String? = (filters.find { it is LanguageFilter } as? LanguageFilter)
+        ?.state
+        ?.let { LANGUAGES.getOrNull(it)?.second }
 
     /** languages that can be searched through the `language:` tag */
     private fun isNaturalLanguage(tag: String): Boolean = tag != "n/a" && tag != "other"
