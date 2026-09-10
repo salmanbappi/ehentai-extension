@@ -40,26 +40,12 @@ abstract class EHentai :
     HttpSource(),
     ConfigurableSource {
 
-    private val ehLang: String = when (lang) {
-        "ja" -> "japanese"
-        "en" -> "english"
-        "zh" -> "chinese"
-        "nl" -> "dutch"
-        "fr" -> "french"
-        "de" -> "german"
-        "hu" -> "hungarian"
-        "it" -> "italian"
-        "ko" -> "korean"
-        "pl" -> "polish"
-        "pt-BR" -> "portuguese"
-        "ru" -> "russian"
-        "es" -> "spanish"
-        "th" -> "thai"
-        "vi" -> "vietnamese"
-        "none" -> "n/a"
-        "other" -> "other"
-        else -> ""
-    }
+    /**
+     * e-hentai language tag chosen in the Language filter for the current
+     * search; null means no language restriction. Popular and latest always
+     * browse without one.
+     */
+    private var currentLanguage: String? = null
 
     private val preferences: SharedPreferences by getPreferencesLazy()
 
@@ -116,23 +102,9 @@ abstract class EHentai :
 
     private var lastMangaId = ""
 
-    // true if lang is a "natural human language"
-    private fun isLangNatural(): Boolean = lang !in listOf("none", "other")
-
     private fun genericMangaParse(response: Response): MangasPage {
         val doc = response.asJsoup()
         val mangaElements = doc.select("table.itg td.glname")
-            .let { elements ->
-                if (isLangNatural() && getEnforceLanguagePref()) {
-                    elements.filter { element ->
-                        // only accept elements with a language tag matching ehLang or without a language tag
-                        // could make this stricter and not accept elements without a language tag, possibly add a sharedpreference for it
-                        element.select("div[title^=language]").firstOrNull()?.let { it.text() == ehLang } ?: true
-                    }
-                } else {
-                    elements
-                }
-            }
         val parsedMangas: MutableList<SManga> = mutableListOf()
         for (i in mangaElements.indices) {
             val manga = mangaElements[i].let {
@@ -208,20 +180,27 @@ abstract class EHentai :
         if (it.text() == ">") it.attr("href") else null
     }
 
-    private fun languageTag(enforceLanguageFilter: Boolean = false): String = if (enforceLanguageFilter || getEnforceLanguagePref()) "language:$ehLang" else ""
+    /** e-hentai language tag selected in the Language filter, or null for "All" */
+    private fun selectedLanguage(filters: FilterList): String? =
+        (filters.find { it is LanguageFilter } as? LanguageFilter)
+            ?.state
+            ?.let { LANGUAGES.getOrNull(it)?.second }
 
-    override fun popularMangaRequest(page: Int) = if (isLangNatural()) {
-        exGet("$baseUrl/?f_search=${languageTag()}&f_srdd=5&f_sr=on", page)
-    } else {
-        latestUpdatesRequest(page)
+    /** languages that can be searched through the `language:` tag */
+    private fun isNaturalLanguage(tag: String): Boolean = tag != "n/a" && tag != "other"
+
+    override fun popularMangaRequest(page: Int): Request {
+        currentLanguage = null
+        return exGet("$baseUrl/?f_search=&f_srdd=5&f_sr=on", page)
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val enforceLanguageFilter = filters.find { it is EnforceLanguageFilter }?.state == true
+        val language = selectedLanguage(filters)
+        currentLanguage = language
         var modifiedQuery = when {
-            !isLangNatural() -> query
-            query.isBlank() -> languageTag(enforceLanguageFilter)
-            else -> languageTag(enforceLanguageFilter).let { if (it.isNotEmpty()) "$query,$it" else query }
+            language == null || !isNaturalLanguage(language) -> query
+            query.isBlank() -> "language:$language"
+            else -> "$query,language:$language"
         }
         filters.filterIsInstance<TextFilter>().forEach { filter ->
             if (filter.state.isNotEmpty()) {
@@ -263,7 +242,10 @@ abstract class EHentai :
         return exGet(uri.toString(), page)
     }
 
-    override fun latestUpdatesRequest(page: Int) = exGet(baseUrl, page)
+    override fun latestUpdatesRequest(page: Int): Request {
+        currentLanguage = null
+        return exGet(baseUrl, page)
+    }
 
     override fun popularMangaParse(response: Response) = genericMangaParse(response)
     override fun searchMangaParse(response: Response) = genericMangaParse(response)
@@ -465,10 +447,12 @@ abstract class EHentai :
         // Do not show popular right now pane as we can't parse it
         settings += "prn_n"
 
-        // Exclude every other language except the one we have selected
-        settings += "xl_" + languageMappings.filter { it.first != ehLang }
-            .flatMap { it.second }
-            .joinToString("x")
+        // Exclude every other language except the one chosen in the Language filter
+        currentLanguage?.let { selected ->
+            settings += "xl_" + languageMappings.filter { it.first != selected }
+                .flatMap { it.second }
+                .joinToString("x")
+        }
 
         cookies["uconfig"] = buildSettings(settings)
 
@@ -754,7 +738,7 @@ abstract class EHentai :
 
     // Filters
     override fun getFilterList() = FilterList(
-        EnforceLanguageFilter(getEnforceLanguagePref()),
+        LanguageFilter(),
         Favorites(),
         Watched(),
         GenreGroup(),
@@ -880,7 +864,7 @@ abstract class EHentai :
             ),
         )
 
-    private class EnforceLanguageFilter(default: Boolean) : CheckBox("Enforce language", default)
+    class LanguageFilter : Select<String>("Language", LANGUAGES.map { it.first }.toTypedArray())
 
     // map languages to their internal ids
     private val languageMappings = listOf(
@@ -908,12 +892,29 @@ abstract class EHentai :
         const val PREFIX_ID_SEARCH = "id:"
         const val TR_SUFFIX = "TR"
 
-        // Preferences vals
-        private const val ENFORCE_LANGUAGE_PREF_KEY = "ENFORCE_LANGUAGE"
-        private const val ENFORCE_LANGUAGE_PREF_TITLE = "Enforce Language"
-        private const val ENFORCE_LANGUAGE_PREF_SUMMARY = "If checked, forces browsing of manga matching a language tag"
-        private const val ENFORCE_LANGUAGE_PREF_DEFAULT_VALUE = false
+        /** display name to e-hentai language tag; "All" (null tag) disables language filtering */
+        private val LANGUAGES = listOf(
+            "All" to null,
+            "Japanese" to "japanese",
+            "English" to "english",
+            "Chinese" to "chinese",
+            "Dutch" to "dutch",
+            "French" to "french",
+            "German" to "german",
+            "Hungarian" to "hungarian",
+            "Italian" to "italian",
+            "Korean" to "korean",
+            "Polish" to "polish",
+            "Portuguese" to "portuguese",
+            "Russian" to "russian",
+            "Spanish" to "spanish",
+            "Thai" to "thai",
+            "Vietnamese" to "vietnamese",
+            "N/A (Languageless)" to "n/a",
+            "Other" to "other",
+        )
 
+        // Preferences vals
         private const val ORIGINAL_IMAGE_PREF_KEY = "ORIGINAL_IMAGE"
         private const val ORIGINAL_IMAGE_PREF_TITLE = "Original Image"
         private const val ORIGINAL_IMAGE_PREF_SUMMARY = "If checked, if your account has permission, it will use the original image and the image enhancement process will be slower"
@@ -953,15 +954,8 @@ abstract class EHentai :
             setDefaultValue(FORCE_EH_DEFAULT_VALUE)
         }
 
-        val enforceLanguagePref = CheckBoxPreference(screen.context).apply {
-            key = "${ENFORCE_LANGUAGE_PREF_KEY}_$lang"
-            title = ENFORCE_LANGUAGE_PREF_TITLE
-            summary = ENFORCE_LANGUAGE_PREF_SUMMARY
-            setDefaultValue(ENFORCE_LANGUAGE_PREF_DEFAULT_VALUE)
-        }
-
         val originalImagePref = CheckBoxPreference(screen.context).apply {
-            key = "${ORIGINAL_IMAGE_PREF_KEY}_$lang"
+            key = ORIGINAL_IMAGE_PREF_KEY
             title = ORIGINAL_IMAGE_PREF_TITLE
             summary = ORIGINAL_IMAGE_PREF_SUMMARY
             setDefaultValue(ORIGINAL_IMAGE_PREF_DEFAULT_VALUE)
@@ -996,12 +990,9 @@ abstract class EHentai :
         screen.addPreference(passHashPref)
         screen.addPreference(igneousPref)
         screen.addPreference(originalImagePref)
-        screen.addPreference(enforceLanguagePref)
     }
 
-    private fun getEnforceLanguagePref(): Boolean = preferences.getBoolean("${ENFORCE_LANGUAGE_PREF_KEY}_$lang", ENFORCE_LANGUAGE_PREF_DEFAULT_VALUE)
-
-    private fun getOriginalImagePref(): Boolean = preferences.getBoolean("${ORIGINAL_IMAGE_PREF_KEY}_$lang", ORIGINAL_IMAGE_PREF_DEFAULT_VALUE)
+    private fun getOriginalImagePref(): Boolean = preferences.getBoolean(ORIGINAL_IMAGE_PREF_KEY, ORIGINAL_IMAGE_PREF_DEFAULT_VALUE)
 
     /**
      * Reads a cookie from the WebView cookie store, trying each URL in

@@ -5,22 +5,14 @@ plugins {
 }
 
 keiyoushi {
-    name = "ExHentai / E-Hentai"
-    versionCode = 36
+    name = "ExHentai"
+    versionCode = 37
     contentWarning = ContentWarning.NSFW
     libVersion = "1.4"
 
-    listOf(
-        "ja", "en", "zh", "nl", "fr",
-        "de", "hu", "it", "ko", "pl",
-        "pt-BR", "ru", "es", "th", "vi",
-        "none", "other",
-    ).forEach { sourceLang ->
-        source {
-            lang = sourceLang
-            baseUrl = "https://e-hentai.org"
-            if (sourceLang == "pt-BR") id = 7151438547982231541
-        }
+    source {
+        lang = "all"
+        baseUrl = "https://e-hentai.org"
     }
 
     deeplink {

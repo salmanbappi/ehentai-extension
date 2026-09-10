@@ -3,7 +3,7 @@ package eu.kanade.tachiyomi.extension.all.ehentai
 import kotlin.math.ln
 import kotlin.math.pow
 
-// Various utility methods used in the E-Hentai source
+// Various utility methods used in the ExHentai source
 
 /**
  * Return null if String is blank, otherwise returns the original String
