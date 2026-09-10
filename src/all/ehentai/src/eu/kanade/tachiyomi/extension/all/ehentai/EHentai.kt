@@ -891,8 +891,7 @@ abstract class EHentai :
             ),
         )
 
-    class LanguageFilter(default: Int = 0) :
-        Select<String>("Language", LANGUAGES.map { it.first }.toTypedArray(), default)
+    class LanguageFilter(default: Int = 0) : Select<String>("Language", LANGUAGES.map { it.first }.toTypedArray(), default)
 
     // map languages to their internal ids
     private val languageMappings = listOf(
@@ -1035,11 +1034,9 @@ abstract class EHentai :
         screen.addPreference(originalImagePref)
     }
 
-    private fun getDefaultLanguageIndex(): Int =
-        preferences.getString(DEFAULT_LANGUAGE_PREF_KEY, DEFAULT_LANGUAGE_DEFAULT_VALUE)?.toIntOrNull() ?: 0
-
-    private fun getDefaultLanguage(): String? =
-        LANGUAGES.getOrNull(getDefaultLanguageIndex())?.second
+    private fun getDefaultLanguageIndex(): Int = preferences.getString(DEFAULT_LANGUAGE_PREF_KEY, DEFAULT_LANGUAGE_DEFAULT_VALUE)?.toIntOrNull() ?: 0
+ 
+    private fun getDefaultLanguage(): String? = LANGUAGES.getOrNull(getDefaultLanguageIndex())?.second
 
     private fun getOriginalImagePref(): Boolean = preferences.getBoolean(ORIGINAL_IMAGE_PREF_KEY, ORIGINAL_IMAGE_PREF_DEFAULT_VALUE)
 
