@@ -768,6 +768,7 @@ abstract class EHentai :
         LanguageFilter(getDefaultLanguageIndex()),
         Filter.Separator(),
         CategoryGroup(),
+        Filter.Header("Separate Tags With Comma (,); Prefix With Dash (-) To Exclude"),
         TagFilterGroup(),
         AdvancedGroup(),
         AdditionalGroup(),
