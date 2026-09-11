@@ -16,11 +16,12 @@ private val ONGOING_SUFFIX = arrayOf(
 
 val EX_DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
 
-fun ExGalleryMetadata.copyTo(manga: SManga) {
+fun ExGalleryMetadata.copyTo(manga: SManga, titleFormatter: ((String) -> String)? = null) {
     url?.let { manga.url = it }
     thumbnailUrl?.let { manga.thumbnail_url = it }
 
-    (title ?: altTitle)?.let { manga.title = it }
+    val rawTitle = title ?: altTitle
+    rawTitle?.let { manga.title = titleFormatter?.invoke(it) ?: it }
 
     // Set artist (if we can find one)
     tags[EH_ARTIST_NAMESPACE]?.let {

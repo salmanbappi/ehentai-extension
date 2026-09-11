@@ -95,6 +95,7 @@ abstract class EHentai :
     override val baseUrl: String
         get() = when {
             System.getenv("CI") == "true" -> "https://e-hentai.org"
+            getCustomBaseUrlPref().isNotBlank() -> getCustomBaseUrlPref()
             !getForceEhPref() && hasLoginCookies() -> "https://exhentai.org"
             else -> "https://e-hentai.org"
         }
@@ -112,7 +113,7 @@ abstract class EHentai :
                 SManga.create().apply {
                     // Get title
                     it.selectFirst("a")?.apply {
-                        title = this.select(".glink").text()
+                        title = formatTitle(this.select(".glink").text())
                         url = ExGalleryMetadata.normalizeUrl(attr("href"))
                         if (i == mangaElements.lastIndex) {
                             lastMangaId = ExGalleryMetadata.galleryId(attr("href"))
@@ -387,7 +388,7 @@ abstract class EHentai :
 
             // Copy metadata to manga
             SManga.create().apply {
-                copyTo(this)
+                copyTo(this, ::formatTitle)
                 update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
             }
         }
@@ -995,6 +996,22 @@ abstract class EHentai :
         private const val FORCE_EH_SUMMARY = "Browse e-hentai.org only. Uncheck to use exhentai.org when logged in (the ExHentai sign-in completes automatically)"
         private const val FORCE_EH_DEFAULT_VALUE = false
 
+        private const val BASE_URL_PREF_KEY = "overrideBaseUrl"
+        private const val BASE_URL_PREF_TITLE = "Override Base URL"
+        private const val BASE_URL_PREF_SUMMARY = "Set a custom base URL (e.g. https://e-hentai.org or https://exhentai.org). Leave blank to use default."
+        private const val BASE_URL_PREF_DEFAULT_VALUE = ""
+
+        private const val TITLE_PREF_KEY = "titleDisplay"
+        private const val TITLE_PREF_TITLE = "Title Display"
+        private const val TITLE_PREF_DEFAULT_VALUE = "full"
+
+        private const val TITLE_REGEX_PREF_KEY = "titleCustomRegex"
+        private const val TITLE_REGEX_PREF_TITLE = "Custom Title Filter Regex"
+        private const val TITLE_REGEX_PREF_SUMMARY = "Regex pattern to remove from titles (e.g. \\[MTL\\]|\\[Digital\\]). Leave blank to disable."
+        private const val TITLE_REGEX_PREF_DEFAULT_VALUE = ""
+
+        private val SHORTEN_TITLE_REGEX = Regex("""(\[[^]]*]|[({][^)}]*[)}])""")
+
         /** minimum time between automatic ExHentai sign-in attempts */
         private const val SIGN_IN_COOLDOWN_MS = 60_000L
     }
@@ -1049,12 +1066,83 @@ abstract class EHentai :
             setDefaultValue(IGNEOUS_PREF_DEFAULT_VALUE)
         }
 
+        val baseUrlPref = EditTextPreference(screen.context).apply {
+            key = BASE_URL_PREF_KEY
+            title = BASE_URL_PREF_TITLE
+            summary = preferences.getString(BASE_URL_PREF_KEY, BASE_URL_PREF_DEFAULT_VALUE)?.takeIf(String::isNotBlank) ?: BASE_URL_PREF_SUMMARY
+            dialogTitle = BASE_URL_PREF_TITLE
+            dialogMessage = "Enter custom base URL (must start with http:// or https://), or leave blank for default."
+            setDefaultValue(BASE_URL_PREF_DEFAULT_VALUE)
+
+            setOnPreferenceChangeListener { preference, newValue ->
+                val text = (newValue as? String)?.trim().orEmpty()
+                val isValid = text.isBlank() || text.toHttpUrlOrNull() != null
+                if (isValid) {
+                    val sanitized = if (text.isBlank()) "" else text.removeSuffix("/")
+                    (preference as EditTextPreference).text = sanitized
+                    preference.summary = sanitized.takeIf(String::isNotBlank) ?: BASE_URL_PREF_SUMMARY
+                    preferences.edit().putString(BASE_URL_PREF_KEY, sanitized).apply()
+                }
+                false
+            }
+        }
+
+        val titleDisplayPref = ListPreference(screen.context).apply {
+            key = TITLE_PREF_KEY
+            title = TITLE_PREF_TITLE
+            entries = arrayOf("Full Title", "Short Title")
+            entryValues = arrayOf("full", "short")
+            summary = "%s"
+            setDefaultValue(TITLE_PREF_DEFAULT_VALUE)
+        }
+
+        val titleRegexPref = EditTextPreference(screen.context).apply {
+            key = TITLE_REGEX_PREF_KEY
+            title = TITLE_REGEX_PREF_TITLE
+            summary = preferences.getString(TITLE_REGEX_PREF_KEY, TITLE_REGEX_PREF_DEFAULT_VALUE)?.takeIf(String::isNotBlank) ?: TITLE_REGEX_PREF_SUMMARY
+            dialogTitle = TITLE_REGEX_PREF_TITLE
+            dialogMessage = "Enter regular expression to remove matches from manga titles (e.g. \\[MTL\\]|\\[Digital\\])"
+            setDefaultValue(TITLE_REGEX_PREF_DEFAULT_VALUE)
+
+            setOnPreferenceChangeListener { preference, newValue ->
+                val text = (newValue as? String)?.trim().orEmpty()
+                val isValid = text.isBlank() || runCatching { Regex(text) }.isSuccess
+                if (isValid) {
+                    (preference as EditTextPreference).text = text
+                    preference.summary = text.takeIf(String::isNotBlank) ?: TITLE_REGEX_PREF_SUMMARY
+                    preferences.edit().putString(TITLE_REGEX_PREF_KEY, text).apply()
+                }
+                false
+            }
+        }
+
         screen.addPreference(forceEhPref)
+        screen.addPreference(baseUrlPref)
+        screen.addPreference(titleDisplayPref)
+        screen.addPreference(titleRegexPref)
         screen.addPreference(defaultLanguagePref)
         screen.addPreference(memberIdPref)
         screen.addPreference(passHashPref)
         screen.addPreference(igneousPref)
         screen.addPreference(originalImagePref)
+    }
+
+    private fun getCustomBaseUrlPref(): String = preferences.getString(BASE_URL_PREF_KEY, BASE_URL_PREF_DEFAULT_VALUE)?.trim().orEmpty().removeSuffix("/")
+
+    private fun formatTitle(rawTitle: String): String {
+        var result = rawTitle
+        val titleDisplay = preferences.getString(TITLE_PREF_KEY, TITLE_PREF_DEFAULT_VALUE) ?: TITLE_PREF_DEFAULT_VALUE
+        if (titleDisplay == "short") {
+            result = result.replace(SHORTEN_TITLE_REGEX, "").trim()
+        }
+        val customRegexPattern = preferences.getString(TITLE_REGEX_PREF_KEY, TITLE_REGEX_PREF_DEFAULT_VALUE)?.trim().orEmpty()
+        if (customRegexPattern.isNotBlank()) {
+            runCatching {
+                val regex = Regex(customRegexPattern)
+                result = result.replace(regex, "").trim()
+            }
+        }
+        return result.ifBlank { rawTitle }
     }
 
     private fun getDefaultLanguageIndex(): Int = preferences.getString(DEFAULT_LANGUAGE_PREF_KEY, DEFAULT_LANGUAGE_DEFAULT_VALUE)?.toIntOrNull() ?: 0
