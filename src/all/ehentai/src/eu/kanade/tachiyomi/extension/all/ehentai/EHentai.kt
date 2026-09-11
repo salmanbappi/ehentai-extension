@@ -219,7 +219,17 @@ abstract class EHentai :
             query.isBlank() -> languageTag
             else -> "$query $languageTag"
         }
-        filters.filterIsInstance<TextFilter>().forEach { filter ->
+        fun collectTextFilters(filters: FilterList): List<TextFilter> {
+            val list = mutableListOf<TextFilter>()
+            filters.forEach { filter ->
+                when (filter) {
+                    is TextFilter -> list.add(filter)
+                    is UriGroup<*> -> filter.state.filterIsInstance<TextFilter>().let(list::addAll)
+                }
+            }
+            return list
+        }
+        collectTextFilters(filters).forEach { filter ->
             if (filter.state.isNotEmpty()) {
                 val splitted = filter.state.split(",").filter(String::isNotBlank)
                 splitted.forEach { tag ->
@@ -236,11 +246,11 @@ abstract class EHentai :
         }
         val baseSearchUrl = "$baseUrl$QUERY_PREFIX&f_search=${URLEncoder.encode(modifiedQuery, "UTF-8")}"
         val uri = Uri.parse(baseSearchUrl).buildUpon()
-        // when attempting to search with no genres selected, will auto select all genres
-        filters.filterIsInstance<GenreGroup>().firstOrNull()?.state?.let {
-            // variable to check if any genres are selected
-            val check = it.any { option -> option.state } // or it.any(GenreOption::state)
-            // if no genres are selected by the user set all genres to on
+        // when attempting to search with no categories selected, will auto select all categories
+        filters.filterIsInstance<CategoryGroup>().firstOrNull()?.state?.let {
+            // variable to check if any categories are selected
+            val check = it.any { option -> option.state } // or it.any(CategoryOption::state)
+            // if no categories are selected by the user set all categories to on
             if (!check) {
                 for (i in it) {
                     i.state = true
@@ -768,13 +778,10 @@ abstract class EHentai :
         Filter.Header("Filters"),
         Favorites(),
         Watched(),
-        GenreGroup(),
+        CategoryGroup(),
         Filter.Header("Separate tags with commas (,)"),
         Filter.Header("Prepend with dash (-) to exclude"),
-        Filter.Header("Use 'Female Tags' or 'Male Tags' for specific categories. 'Tags' searches all categories."),
-        TextFilter("Tags", "tag"),
-        TextFilter("Female Tags", "female"),
-        TextFilter("Male Tags", "male"),
+        TagFilterGroup(),
         AdvancedGroup(),
     )
 
@@ -800,28 +807,42 @@ abstract class EHentai :
         }
     }
 
-    class GenreOption(name: String, private val genreId: String) :
+    class CategoryOption(name: String, private val categoryId: String) :
         CheckBox(name, false),
         UriFilter {
         override fun addToUri(builder: Uri.Builder) {
-            builder.appendQueryParameter("f_$genreId", if (state) "1" else "0")
+            builder.appendQueryParameter("f_$categoryId", if (state) "1" else "0")
         }
     }
 
-    class GenreGroup :
-        UriGroup<GenreOption>(
-            "Genres",
+    class CategoryGroup :
+        UriGroup<CategoryOption>(
+            "Categories",
             listOf(
-                GenreOption("Dōjinshi", "doujinshi"),
-                GenreOption("Manga", "manga"),
-                GenreOption("Artist CG", "artistcg"),
-                GenreOption("Game CG", "gamecg"),
-                GenreOption("Western", "western"),
-                GenreOption("Non-H", "non-h"),
-                GenreOption("Image Set", "imageset"),
-                GenreOption("Cosplay", "cosplay"),
-                GenreOption("Asian Porn", "asianporn"),
-                GenreOption("Misc", "misc"),
+                CategoryOption("Dōjinshi", "doujinshi"),
+                CategoryOption("Manga", "manga"),
+                CategoryOption("Artist CG", "artistcg"),
+                CategoryOption("Game CG", "gamecg"),
+                CategoryOption("Western", "western"),
+                CategoryOption("Non-H", "non-h"),
+                CategoryOption("Image Set", "imageset"),
+                CategoryOption("Cosplay", "cosplay"),
+                CategoryOption("Asian Porn", "asianporn"),
+                CategoryOption("Misc", "misc"),
+            ),
+        )
+
+    class TagFilterGroup :
+        UriGroup<TextFilter>(
+            "Filters",
+            listOf(
+                TextFilter("Groups", "group"),
+                TextFilter("Artists", "artist"),
+                TextFilter("Tags", "tag"),
+                TextFilter("Female Tags", "female"),
+                TextFilter("Male Tags", "male"),
+                TextFilter("Parodies", "parody"),
+                TextFilter("Characters", "character"),
             ),
         )
 

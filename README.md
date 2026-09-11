@@ -17,7 +17,7 @@ The extension registers a **single source** named **"ExHentai"** (in the *All* c
 
 ## Extension features
 
-- Popular / Latest / Search with full filter support (genres, tags, min rating, page ranges, favorites/watched lists)
+- Popular / Latest / Search with full filter support (categories, tags, min rating, page ranges, favorites/watched lists)
 - Tag namespaces parsed into Mihon's tag list; galleries become single-chapter entries
 - **ExHentai support (automatic)** — open the source in WebView, log in on e-hentai.org, then just browse. The extension picks up `ipb_member_id` / `ipb_pass_hash` from the WebView by itself, then completes the ExHentai sign-in automatically by walking the same SSO bounce a browser uses (exhentai.org → `forums.e-hentai.org/remoteapi.php` → `?poni=`) and capturing the `igneous` cookie. No manual cookie entry needed; the settings fields remain as an override.
 - **Language filter** — one source for all languages; select one (or All) from the Language filter in the search screen
