@@ -992,11 +992,11 @@ abstract class EHentai :
         )
 
         private val SORT_OPTIONS = listOf(
-            "Default (Latest)" to null,
-            "Toplist: All Time" to 11,
-            "Toplist: Past Year" to 12,
-            "Toplist: Past Month" to 13,
-            "Toplist: Yesterday" to 15,
+            "Latest" to null,
+            "All Time" to 11,
+            "Past Year" to 12,
+            "Past Month" to 13,
+            "Yesterday" to 15,
         )
 
         // Preferences vals
