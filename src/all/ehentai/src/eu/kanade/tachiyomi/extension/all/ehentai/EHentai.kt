@@ -768,7 +768,7 @@ abstract class EHentai :
         LanguageFilter(getDefaultLanguageIndex()),
         Filter.Separator(),
         CategoryGroup(),
-        Filter.Header("Separate Tags With Comma (,); Prefix With Dash (-) To Exclude"),
+        Filter.Header("Separate with comma (,), '-' to exclude"),
         TagFilterGroup(),
         AdvancedGroup(),
         AdditionalGroup(),
@@ -915,13 +915,12 @@ abstract class EHentai :
         UriGroup<Filter<*>>(
             "Additional Options",
             listOf(
-                AdvancedOption("Search Gallery Name", "f_sname", true),
                 AdvancedOption("Search Gallery Tags", "f_stags", true),
+                AdvancedOption("Search Gallery Name", "f_sname", true),
                 AdvancedOption("Search Gallery Description", "f_sdesc"),
-                AdvancedOption("Search Torrent Filenames", "f_storr"),
-                AdvancedOption("Only Show Galleries With Torrents", "f_sto"),
                 AdvancedOption("Search Low-Power Tags", "f_sdt1"),
-                AdvancedOption("Search Downvoted Tags", "f_sdt2"),
+                AdvancedOption("Search Down Voted Tags", "f_sdt2"),
+                AdvancedOption("Search Torrent File Names", "f_storr"),
             ),
         )
 
