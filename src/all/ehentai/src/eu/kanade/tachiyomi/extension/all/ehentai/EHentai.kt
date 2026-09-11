@@ -767,14 +767,10 @@ abstract class EHentai :
         Filter.Header("Language"),
         LanguageFilter(getDefaultLanguageIndex()),
         Filter.Separator(),
-        Filter.Header("Filters"),
-        Favorites(),
-        Watched(),
         CategoryGroup(),
-        Filter.Header("Separate tags with commas (,)"),
-        Filter.Header("Prepend with dash (-) to exclude"),
         TagFilterGroup(),
         AdvancedGroup(),
+        AdditionalGroup(),
     )
 
     open class TextFilter(name: String, val type: String, val specific: String = "") : Text(name)
@@ -830,6 +826,7 @@ abstract class EHentai :
             listOf(
                 TextFilter("Groups", "group"),
                 TextFilter("Artists", "artist"),
+                TextFilter("Uploaders", "uploader"),
                 TextFilter("Tags", "tag"),
                 TextFilter("Female Tags", "female"),
                 TextFilter("Male Tags", "male"),
@@ -902,6 +899,21 @@ abstract class EHentai :
         UriGroup<Filter<*>>(
             "Advanced Options",
             listOf(
+                AdvancedOption("Browse Expunged Galleries", "f_sh"),
+                AdvancedOption("Require Gallery Torrent", "f_sto"),
+                RatingOption(),
+                MinPagesOption(),
+                MaxPagesOption(),
+                AdvancedOption("Disable custom Language filters", "f_sfl"),
+                AdvancedOption("Disable custom Uploader filters", "f_sfu"),
+                AdvancedOption("Disable custom Tag filters", "f_sft"),
+            ),
+        )
+
+    class AdditionalGroup :
+        UriGroup<Filter<*>>(
+            "Additional Options",
+            listOf(
                 AdvancedOption("Search Gallery Name", "f_sname", true),
                 AdvancedOption("Search Gallery Tags", "f_stags", true),
                 AdvancedOption("Search Gallery Description", "f_sdesc"),
@@ -909,10 +921,6 @@ abstract class EHentai :
                 AdvancedOption("Only Show Galleries With Torrents", "f_sto"),
                 AdvancedOption("Search Low-Power Tags", "f_sdt1"),
                 AdvancedOption("Search Downvoted Tags", "f_sdt2"),
-                AdvancedOption("Show Expunged Galleries", "f_sh"),
-                RatingOption(),
-                MinPagesOption(),
-                MaxPagesOption(),
             ),
         )
 
