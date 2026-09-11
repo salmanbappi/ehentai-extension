@@ -131,7 +131,12 @@ abstract class EHentai :
         }
 
         // Add to page if required
-        val hasNextPage = doc.select("a#unext[href]").hasText()
+        val isToplist = response.request.url.encodedPath.contains("toplist.php")
+        val hasNextPage = if (isToplist) {
+            doc.select("table.ptb td a").any { it.text() == ">" }
+        } else {
+            doc.select("a#unext[href]").hasText()
+        }
 
         return MangasPage(parsedMangas, hasNextPage)
     }
@@ -209,6 +214,17 @@ abstract class EHentai :
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+        val sortFilter = filters.filterIsInstance<SortFilter>().firstOrNull()
+        val toplistIndex = sortFilter?.state?.let { SORT_OPTIONS.getOrNull(it)?.second }
+        if (toplistIndex != null) {
+            val uri = Uri.parse("$baseUrl/toplist.php").buildUpon()
+            uri.appendQueryParameter("tl", toplistIndex.toString())
+            if (page > 1) {
+                uri.appendQueryParameter("p", (page - 1).toString())
+            }
+            return exGet(uri.toString())
+        }
+
         val language = selectedLanguage(filters)
         currentLanguage = language
         val languageTag = if (language != null && isNaturalLanguage(language)) {
@@ -764,6 +780,9 @@ abstract class EHentai :
 
     // Filters
     override fun getFilterList() = FilterList(
+        Filter.Header("Sort"),
+        SortFilter(),
+        Filter.Separator(),
         Filter.Header("Language"),
         LanguageFilter(getDefaultLanguageIndex()),
         Filter.Separator(),
@@ -926,6 +945,8 @@ abstract class EHentai :
 
     class LanguageFilter(default: Int = 0) : Select<String>("Language", LANGUAGES.map { it.first }.toTypedArray(), default)
 
+    class SortFilter : Select<String>("Sort by", SORT_OPTIONS.map { it.first }.toTypedArray(), 0)
+
     // map languages to their internal ids
     private val languageMappings = listOf(
         Pair("japanese", listOf("0", "1024", "2048")),
@@ -972,6 +993,14 @@ abstract class EHentai :
             "Vietnamese" to "vietnamese",
             "N/A (Languageless)" to "n/a",
             "Other" to "other",
+        )
+
+        private val SORT_OPTIONS = listOf(
+            "Default (Latest)" to null,
+            "Toplist: All Time" to 11,
+            "Toplist: Past Year" to 12,
+            "Toplist: Past Month" to 13,
+            "Toplist: Yesterday" to 15,
         )
 
         // Preferences vals
