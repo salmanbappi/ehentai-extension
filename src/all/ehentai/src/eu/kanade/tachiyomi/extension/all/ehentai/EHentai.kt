@@ -920,9 +920,9 @@ abstract class EHentai :
                 RatingOption(),
                 MinPagesOption(),
                 MaxPagesOption(),
-                AdvancedOption("Disable custom Language filters", "f_sfl"),
-                AdvancedOption("Disable custom Uploader filters", "f_sfu"),
-                AdvancedOption("Disable custom Tag filters", "f_sft"),
+                AdvancedOption("Disable Custom Language Filters", "f_sfl"),
+                AdvancedOption("Disable Custom Uploader Filters", "f_sfu"),
+                AdvancedOption("Disable Custom Tag Filters", "f_sft"),
             ),
         )
 
