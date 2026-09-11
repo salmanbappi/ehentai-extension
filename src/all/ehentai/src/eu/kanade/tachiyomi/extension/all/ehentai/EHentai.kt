@@ -219,16 +219,6 @@ abstract class EHentai :
             query.isBlank() -> languageTag
             else -> "$query $languageTag"
         }
-        fun collectTextFilters(filters: FilterList): List<TextFilter> {
-            val list = mutableListOf<TextFilter>()
-            filters.forEach { filter ->
-                when (filter) {
-                    is TextFilter -> list.add(filter)
-                    is UriGroup<*> -> filter.state.filterIsInstance<TextFilter>().let(list::addAll)
-                }
-            }
-            return list
-        }
         collectTextFilters(filters).forEach { filter ->
             if (filter.state.isNotEmpty()) {
                 val splitted = filter.state.split(",").filter(String::isNotBlank)
@@ -845,6 +835,17 @@ abstract class EHentai :
                 TextFilter("Characters", "character"),
             ),
         )
+
+    private fun collectTextFilters(filters: FilterList): List<TextFilter> {
+        val list = mutableListOf<TextFilter>()
+        filters.forEach { filter ->
+            when (filter) {
+                is TextFilter -> list.add(filter)
+                is UriGroup<*> -> filter.state.filterIsInstance<TextFilter>().let(list::addAll)
+            }
+        }
+        return list
+    }
 
     class AdvancedOption(name: String, private val param: String, defValue: Boolean = false) :
         CheckBox(name, defValue),
