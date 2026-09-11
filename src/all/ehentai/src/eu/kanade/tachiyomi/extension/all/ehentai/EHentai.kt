@@ -780,12 +780,8 @@ abstract class EHentai :
 
     // Filters
     override fun getFilterList() = FilterList(
-        Filter.Header("Sort"),
         SortFilter(),
-        Filter.Separator(),
-        Filter.Header("Language"),
         LanguageFilter(getDefaultLanguageIndex()),
-        Filter.Separator(),
         CategoryGroup(),
         Filter.Header("Separate with comma (,), '-' to exclude"),
         TagFilterGroup(),
