@@ -775,7 +775,7 @@ abstract class EHentai :
         AdvancedGroup(),
     )
 
-    internal open class TextFilter(name: String, val type: String, val specific: String = "") : Text(name)
+    open class TextFilter(name: String, val type: String, val specific: String = "") : Text(name)
 
     class Watched :
         CheckBox("Watched List"),
@@ -842,6 +842,7 @@ abstract class EHentai :
             when (filter) {
                 is TextFilter -> list.add(filter)
                 is UriGroup<*> -> filter.state.filterIsInstance<TextFilter>().let(list::addAll)
+                else -> {}
             }
         }
         return list
