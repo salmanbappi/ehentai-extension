@@ -783,8 +783,8 @@ abstract class EHentai :
         SortFilter(),
         LanguageFilter(getDefaultLanguageIndex()),
         CategoryGroup(),
-        Filter.Header("Separate with comma (,), '-' to exclude"),
         TagFilterGroup(),
+        Filter.Header("Comma (,) Separate; Prefix Dash (-) Exclude"),
         AdvancedGroup(),
         AdditionalGroup(),
     )
