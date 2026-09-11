@@ -998,8 +998,8 @@ abstract class EHentai :
         private const val FORCE_EH_DEFAULT_VALUE = false
 
         private const val BASE_URL_PREF_KEY = "overrideBaseUrl"
-        private const val BASE_URL_PREF_TITLE = "Override Base URL"
-        private const val BASE_URL_PREF_SUMMARY = "Set a custom base URL (e.g. https://e-hentai.org or https://exhentai.org). Leave blank to use default."
+        private const val BASE_URL_PREF_TITLE = "Custom Base URL"
+        private const val BASE_URL_PREF_DIALOG_MESSAGE = "Leave blank to use the default URL."
         private const val BASE_URL_PREF_DEFAULT_VALUE = ""
 
         private const val TITLE_PREF_KEY = "titleDisplay"
@@ -1007,8 +1007,8 @@ abstract class EHentai :
         private const val TITLE_PREF_DEFAULT_VALUE = "full"
 
         private const val TITLE_REGEX_PREF_KEY = "titleCustomRegex"
-        private const val TITLE_REGEX_PREF_TITLE = "Custom Title Filter Regex"
-        private const val TITLE_REGEX_PREF_SUMMARY = "Regex pattern to remove from titles (e.g. \\[MTL\\]|\\[Digital\\]). Leave blank to disable."
+        private const val TITLE_REGEX_PREF_TITLE = "Custom regex to be removed from title"
+        private const val TITLE_REGEX_PREF_HINT = "[Group (Artist)] Title [Language][Decensored][Digital]"
         private const val TITLE_REGEX_PREF_DEFAULT_VALUE = ""
 
         private val SHORTEN_TITLE_REGEX = Regex("""(\[[^]]*]|[({][^)}]*[)}])""")
@@ -1070,10 +1070,15 @@ abstract class EHentai :
         val baseUrlPref = EditTextPreference(screen.context).apply {
             key = BASE_URL_PREF_KEY
             title = BASE_URL_PREF_TITLE
-            summary = preferences.getString(BASE_URL_PREF_KEY, BASE_URL_PREF_DEFAULT_VALUE)?.takeIf(String::isNotBlank) ?: BASE_URL_PREF_SUMMARY
+            val currentVal = preferences.getString(BASE_URL_PREF_KEY, BASE_URL_PREF_DEFAULT_VALUE)?.takeIf(String::isNotBlank)
+            summary = currentVal ?: "https://e-hentai.org"
             dialogTitle = BASE_URL_PREF_TITLE
-            dialogMessage = "Enter custom base URL (must start with http:// or https://), or leave blank for default."
+            dialogMessage = BASE_URL_PREF_DIALOG_MESSAGE
             setDefaultValue(BASE_URL_PREF_DEFAULT_VALUE)
+
+            setOnBindEditTextListener { editText ->
+                editText.hint = "https://e-hentai.org"
+            }
 
             setOnPreferenceChangeListener { preference, newValue ->
                 val text = (newValue as? String)?.trim().orEmpty()
@@ -1081,7 +1086,7 @@ abstract class EHentai :
                 if (isValid) {
                     val sanitized = if (text.isBlank()) "" else text.removeSuffix("/")
                     (preference as EditTextPreference).text = sanitized
-                    preference.summary = sanitized.takeIf(String::isNotBlank) ?: BASE_URL_PREF_SUMMARY
+                    preference.summary = sanitized.takeIf(String::isNotBlank) ?: "https://e-hentai.org"
                     preferences.edit().putString(BASE_URL_PREF_KEY, sanitized).apply()
                 }
                 false
@@ -1100,17 +1105,21 @@ abstract class EHentai :
         val titleRegexPref = EditTextPreference(screen.context).apply {
             key = TITLE_REGEX_PREF_KEY
             title = TITLE_REGEX_PREF_TITLE
-            summary = preferences.getString(TITLE_REGEX_PREF_KEY, TITLE_REGEX_PREF_DEFAULT_VALUE)?.takeIf(String::isNotBlank) ?: TITLE_REGEX_PREF_SUMMARY
+            val currentVal = preferences.getString(TITLE_REGEX_PREF_KEY, TITLE_REGEX_PREF_DEFAULT_VALUE)?.takeIf(String::isNotBlank)
+            summary = currentVal ?: ""
             dialogTitle = TITLE_REGEX_PREF_TITLE
-            dialogMessage = "Enter regular expression to remove matches from manga titles (e.g. \\[MTL\\]|\\[Digital\\])"
             setDefaultValue(TITLE_REGEX_PREF_DEFAULT_VALUE)
+
+            setOnBindEditTextListener { editText ->
+                editText.hint = TITLE_REGEX_PREF_HINT
+            }
 
             setOnPreferenceChangeListener { preference, newValue ->
                 val text = (newValue as? String)?.trim().orEmpty()
                 val isValid = text.isBlank() || runCatching { Regex(text) }.isSuccess
                 if (isValid) {
                     (preference as EditTextPreference).text = text
-                    preference.summary = text.takeIf(String::isNotBlank) ?: TITLE_REGEX_PREF_SUMMARY
+                    preference.summary = text
                     preferences.edit().putString(TITLE_REGEX_PREF_KEY, text).apply()
                 }
                 false
